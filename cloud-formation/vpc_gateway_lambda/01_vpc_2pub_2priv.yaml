@@ -1,0 +1,180 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  PrivateSubnets:
+    Description: Specify if you want create pritave subnets, NAT, ElasticIP.
+    Default: no
+    Type: String
+    AllowedValues: [yes,no]
+    ConstraintDescription: must specify yes, no.
+Conditions:
+  CreatePrivateResources: !Equals [!Ref PrivateSubnets, yes]
+Resources:
+  ## VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: Erick VPC
+  ## INTERNET GATEWAY        
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  ## SUBNETS     
+  SubnetPublic1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-1a
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: SubnetPublic1-1a
+  SubnetPublic2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-1b
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true  
+      Tags:
+        - Key: Name
+          Value: SubnetPublic2-1b       
+  SubnetPrivate1:
+    Condition: CreatePrivateResources
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-1a
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: SubnetPrivate1-1a      
+  SubnetPrivate2:
+    Condition: CreatePrivateResources
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-1b
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: true     
+      Tags:
+        - Key: Name
+          Value: SubnetPrivate2-1b              
+  ## PUBLIC ROUTING
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Public Routes
+  InternetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref RouteTable
+  SubnetPublic1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref SubnetPublic1
+  SubnetPublic2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref SubnetPublic2     
+  ## ELASTIC IP
+  NatPublicIP:
+    Condition: CreatePrivateResources
+    Type: AWS::EC2::EIP
+    DependsOn: VPC
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value:  From NatGateway
+  ## NAT GATEWAY
+  NatGateway:
+    Condition: CreatePrivateResources
+    Type: AWS::EC2::NatGateway
+    DependsOn: NatPublicIP
+    Properties: 
+      SubnetId: !Ref SubnetPublic1
+      AllocationId: !GetAtt NatPublicIP.AllocationId
+  ## PRIVATE ROUTING
+  PrivateRouteTable:
+    Condition: CreatePrivateResources
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC  
+      Tags:
+        - Key: Name
+          Value: Private Routes
+  PrivateRoute:
+    Condition: CreatePrivateResources
+    Type: AWS::EC2::Route
+    Properties:
+      NatGatewayId: !Ref NatGateway
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+  SubnetPrivate1RouteTableAssociation:
+    Condition: CreatePrivateResources
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPrivate1
+      RouteTableId: !Ref PrivateRouteTable  
+  SubnetPrivate2RouteTableAssociation:
+    Condition: CreatePrivateResources
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPrivate2
+      RouteTableId: !Ref PrivateRouteTable
+
+Outputs:
+  PublicSubnet1:
+    Value:
+      Fn::GetAtt:
+        - SubnetPublic1
+        - SubnetId
+    Description: PublicSubnet1 Id
+  PublicSubnet2:
+    Value:
+      Fn::GetAtt:
+        - SubnetPublic2
+        - SubnetId
+    Description: PublicSubnet2 Id
+  PrivateSubnet1:
+    Condition: CreatePrivateResources
+    Value:
+      Fn::GetAtt:
+        - SubnetPrivate1
+        - SubnetId
+    Description: PrivateSubnet1 Id    
+  PrivateSubnet2:
+    Condition: CreatePrivateResources
+    Value:
+      Fn::GetAtt:
+        - SubnetPrivate2
+        - SubnetId
+    Description: PrivateSubnet2 Id
+  VPC:
+    Value:
+      Fn::GetAtt:
+        - VPC
+        - VpcId
+    Description: VPC Id      
+
+
