@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  VPC:
+    Description: Specify VPN .
+    Type: String
+  SubNetPriv1:
+    Description: Specify SubNet Private 1 .
+    Type: String
+  SubNetPriv2:
+    Description: Specify SubNet Private 2 .
+    Type: String    
+  WorkstationIp:
+    Type: String
+    Default: "189.240.23.226"
+    Description: The IP address of the workstation that can SSH into the instance.  
+Resources:
+  ## Lambda Role
+  LambdaRole1:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaRole1
+      AssumeRolePolicyDocument:
+        Statement: 
+          - Effect: "Allow"
+            Principal: 
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+#      ManagedPolicyArns:
+#        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      Policies:
+        - PolicyName: CustomLambdaVPCPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'ec2:DescribeNetworkInterfaces'
+                  - 'ec2:CreateNetworkInterface'
+                  - 'ec2:DeleteNetworkInterface'
+                  - 'ec2:DescribeInstances'
+                  - 'ec2:AttachNetworkInterface'
+                Resource: '*'
+      Path: '/'      
+  ## SecurityGroup
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "Lambda SG"
+      GroupDescription: "SSH and web traffic in, all traffic out."
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp:  !Sub ${WorkstationIp}/32
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp:  !Sub ${WorkstationIp}/32
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0      
+      Tags:
+        - Key: Name
+          Value: Lambda Test CF SG.           
+  ## Lambda
+  Lambda1:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: LambdaTest1
+      Role: !GetAtt LambdaRole1.Arn
+      Description: This Lambda is for a test.
+      Runtime: python3.7
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          def handler(event,context):
+            message = "Hello Erick Test Lambda!"
+            return message
+      TracingConfig:
+        Mode: Active
+      Environment:
+        Variables:
+          AWS_REGION_CUSTOM: !Ref AWS::Region  
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        SubnetIds:
+          - !Ref SubNetPriv1
+          - !Ref SubNetPriv2  
+Outputs:
+  Lambda:
+    Value:
+      Fn::GetAtt:
+        - Lambda1
+        - Arn
+    Description: Arn of Lambda  
+  SecurityGroup:
+    Value:
+      Fn::GetAtt:
+        - SecurityGroup
+        - GroupId
+    Description: SecurityGroup ID.
+      
