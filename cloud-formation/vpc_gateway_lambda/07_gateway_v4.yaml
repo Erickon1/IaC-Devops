@@ -1,0 +1,616 @@
+AWSTemplateFormatVersion: '2010-09-09'
+# This template contains
+# ApiGatewayRestApi
+# ApiGatewayModel
+# ApiGatewayStage
+# ApiGatewayDeployment
+# ApiGatewayCloudWatchLogRole
+# ApiGatewayAccountSettings
+# ApiGatewayIamRoleDemo
+# LambdaDemo
+# SampleApiPermissionDemo
+# SampleApiPermissionDemoSwagger
+# LambdaIamRole
+# WAFWebACL
+############# add on v2 
+# Modify LambdaDemo to add custom layer 
+# ApiGatewayResourceHealthCheck
+# ApiGatewayMethodHealthCheck
+# ApiGatewayIamRoleHealthCheck
+# LambdaHealthCheck
+# LambdaHealthCheckIamRole
+############# add on v3
+# Modify ApiGatewayRestApi to add validators and security and i put them on /Demo also specify requestParameters and cacheKeyParameters
+############# add on v4 
+# Change Name ApiGatewayResourceHealthCheck to ApiGatewayResourceHealthCheck2
+# Change Name ApiGatewayMethodHealthCheck to ApiGatewayMethodHealthCheck2
+# ApiGatewayResourceDemo2
+# ApiGatewayResourceDemo2Swagger
+# ApiGatewayMethodDemo2
+# ApiGatewayMethodDemo2Swagger
+# RequestValidator
+# TestAuthorizer
+# Modify ApiGatewayStage to add /Demo2
+# ApiGatewayIamRoleDemo2
+# LambdaDemo2
+# LambdaDemo2IamRole
+Parameters:
+  SecurityGroupVPCLambda:
+    Description: Specify Security Group from Lambdas VPC.
+    Type: String
+  SubNetPriv1:
+    Description: Specify SubNet Private 1 .
+    Type: String
+  SubNetPriv2:
+    Description: Specify SubNet Private 2 .
+    Type: String    
+  LambdaLayer: 
+    Description: An existing Lambda Layer ARN (optional).
+    Default: NONE
+    Type: String
+  LambdaHC: 
+    Description: An existing Lambda Health Check ARN (optional).
+    Default: NONE
+    Type: String
+  CognitoPool: 
+    Description: An existing Cognito Pool ARN.
+    Type: String      
+Conditions: 
+  UseDefaultPythonLayer: !Equals [!Ref LambdaLayer, NONE]
+  CreateLambdaHC: !Equals [!Ref LambdaHC, NONE]
+Mappings:
+  lambda:
+    layer:
+      python: "arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python37:3"
+Resources:
+  ## Ai Gateway
+  ApiGatewayRestApi:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+#      Mode: overwrite 
+      Mode: merge
+# default Mode: merge
+      Body:
+        swagger: '2.0'
+        info:
+          description: Lista de APIs utlizados para la linea de ApiDemo
+          version: 0.0.1
+          title: !Join 
+            - '-'
+            - - API-Management
+        schemes:
+          - https        
+        x-amazon-apigateway-request-validators:
+          all:
+            validateRequestBody: true
+            validateRequestParameters: true  
+          params-only:
+            validateRequestBody: false
+            validateRequestParameters: true  
+        securityDefinitions: # 1 Add security definition
+          CognitoAuthorizer:
+            type: "apiKey"
+            name: "Authorization"
+            in: "header"
+            x-amazon-apigateway-authtype: "cognito_user_pools"
+            x-amazon-apigateway-authorizer:
+              providerARNs: 
+              - !Ref CognitoPool
+              type: "cognito_user_pools"    
+        paths:
+          /Demo:
+            post:
+              x-amazon-apigateway-request-validator : all
+              security: # 2 Add security item
+              - CognitoAuthorizer: []
+              x-amazon-apigateway-auth: COGNITO_USER_POOLS          
+              parameters:
+                - in: header
+                  name: authorization
+                  required: true
+                - in: header
+                  name: x-cache-api
+                  required: true                   
+              produces:
+                - application/json
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                uri: !Join 
+                  - ''
+                  - - 'arn:aws:apigateway:'
+                    - !Ref 'AWS::Region'
+                    - ':lambda:path/2015-03-31/functions/'
+                    - !GetAtt 
+                      - LambdaDemo
+                      - Arn
+                    - /invocations
+                passthroughBehavior: when_no_match
+                credentials: !GetAtt ApiGatewayIamRoleDemo.Arn
+                contentHandling: CONVERT_TO_TEXT
+                type: AWS_PROXY
+                cacheKeyParameters:
+                  - method.request.header.x-cache-api                  
+                requestParameters:
+                  integration.request.header.authorization: method.request.header.authorization          
+                  integration.request.header.x-cache-api: method.request.header.x-cache-api
+          /Demo/Swagger:
+            get:
+              produces:
+                - application/json
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                uri: !Join 
+                  - ''
+                  - - 'arn:aws:apigateway:'
+                    - !Ref 'AWS::Region'
+                    - ':lambda:path/2015-03-31/functions/'
+                    - !GetAtt 
+                      - LambdaDemo
+                      - Arn
+                    - /invocations
+                passthroughBehavior: when_no_match
+                credentials: !GetAtt ApiGatewayIamRoleDemo.Arn
+                contentHandling: CONVERT_TO_TEXT
+                type: AWS_PROXY
+        definitions:
+          Empty:
+            type: object
+            title: Empty Schema
+      Parameters:
+        endpointConfigurationTypes: REGIONAL
+      Tags:
+        - Key: ApplicationName
+          Value: ApiDemo
+  ## Add Api Gateway Resource
+  ApiGatewayResourceHealthCheck2:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: 'HealthCheck'
+      RestApiId: !Ref ApiGatewayRestApi
+  ApiGatewayResourceDemo2:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: 'Demo2'
+      RestApiId: !Ref ApiGatewayRestApi
+  ApiGatewayResourceDemo2Swagger:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayResourceDemo2
+      PathPart: 'Swagger'
+      RestApiId: !Ref ApiGatewayRestApi
+  
+  ## Add Api Gateway Method
+  ApiGatewayMethodHealthCheck2:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Credentials: !GetAtt ApiGatewayIamRoleHealthCheck.Arn
+        ##For Lambda integrations, you must set the integration method to POST
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_MATCH
+        Type: AWS
+        Uri: !If [CreateLambdaHC, !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaHealthCheck.Arn}/invocations" , !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaHC}/invocations"]
+        IntegrationResponses:
+          - StatusCode: 200      
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: 'Empty'
+      OperationName: 'HealthCheck'
+      ResourceId: !Ref ApiGatewayResourceHealthCheck2
+      RestApiId: !Ref ApiGatewayRestApi
+  ApiGatewayMethodDemo2:
+    DependsOn: [LambdaDemo2,ApiGatewayIamRoleDemo2,ApiGatewayResourceDemo2]
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref TestAuthorizer
+      HttpMethod: POST
+      RequestParameters:
+        method.request.header.authorization: true
+        method.request.header.x-cache-api: true
+      Integration:
+        ConnectionType: INTERNET
+        Credentials: !GetAtt ApiGatewayIamRoleDemo2.Arn
+        ##For Lambda integrations, you must set the integration method to POST
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_MATCH
+        Type: AWS_PROXY
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaDemo2.Arn}/invocations"
+        CacheKeyParameters:
+          - method.request.header.x-cache-api
+        RequestParameters:
+          integration.request.header.authorization: method.request.header.authorization          
+          integration.request.header.x-cache-api: method.request.header.x-cache-api
+      RequestValidatorId: !Ref RequestValidator
+      OperationName: 'Demo2'
+      ResourceId: !Ref ApiGatewayResourceDemo2
+      RestApiId: !Ref ApiGatewayRestApi    
+  ApiGatewayMethodDemo2Swagger:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Credentials: !GetAtt ApiGatewayIamRoleDemo2.Arn
+        ##For Lambda integrations, you must set the integration method to POST
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_MATCH
+        Type: AWS_PROXY
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaDemo2.Arn}/invocations"
+      OperationName: 'Demo2/Swagger'
+      ResourceId: !Ref ApiGatewayResourceDemo2Swagger
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ##RequestValidator
+  RequestValidator:
+    Type: AWS::ApiGateway::RequestValidator
+    Properties:
+      Name: TestValidator
+      RestApiId: !Ref ApiGatewayRestApi
+      ValidateRequestBody: true
+      ValidateRequestParameters: true
+  ## Authorizer
+  TestAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      IdentitySource: method.request.header.authorization
+      #Same of cognito pool
+      Name: CognitoAuthorizer2
+      ProviderARNs:
+        - !Ref CognitoPool
+      RestApiId: !Ref ApiGatewayRestApi
+      Type: COGNITO_USER_POOLS
+  ApiGatewayModel:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      ContentType: 'application/json'
+      RestApiId: !Ref ApiGatewayRestApi
+      Schema: {}
+  ## Ai Gateway Stage
+  ApiGatewayStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      DeploymentId: !Ref ApiGatewayDeployment
+      Description: Version 1 para Apis de ApiDemo
+      RestApiId: !Ref ApiGatewayRestApi      
+      StageName: 'dev-v1'
+      MethodSettings:
+        - ResourcePath: /Demo
+          HttpMethod: POST
+          LoggingLevel: INFO        
+        - ResourcePath: /Demo2
+          HttpMethod: POST
+          LoggingLevel: INFO  
+  ## Ai Gateway Deploy
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: ApiGatewayMethodDemo2
+    Properties:
+      Description: Despliegue de APIs para ApiDemo
+      RestApiId: !Ref ApiGatewayRestApi  
+  ## Ai Gateway Logs
+  ApiGatewayCloudWatchLogRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Description: Role to grant API Gateway permission to create CloudWatch logs
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+
+  ApiGatewayAccountSettings:
+    Type: 'AWS::ApiGateway::Account'
+    Properties:
+      CloudWatchRoleArn: !GetAtt ApiGatewayCloudWatchLogRole.Arn                                
+  ## Ai Gateway Role
+  ApiGatewayIamRoleDemo:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        
+        Statement:
+          - Sid: ''
+            Effect: 'Allow'
+            Principal:
+              Service:
+                - 'apigateway.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: '/'
+      Policies:
+        - PolicyName: LambdaAccessDemo
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action: 'lambda:*'
+                Resource: !GetAtt LambdaDemo.Arn
+  ApiGatewayIamRoleHealthCheck:    
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        
+        Statement:
+          - Sid: ''
+            Effect: 'Allow'
+            Principal:
+              Service:
+                - 'apigateway.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: '/'
+      Policies:
+        - PolicyName: LambdaAccessHealthCheck
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action: 'lambda:*'
+                Resource: !If [CreateLambdaHC, !GetAtt LambdaHealthCheck.Arn , !Ref LambdaHC]  
+  ApiGatewayIamRoleDemo2:
+    DependsOn: LambdaDemo2
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        
+        Statement:
+          - Sid: ''
+            Effect: 'Allow'
+            Principal:
+              Service:
+                - 'apigateway.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: '/'
+      Policies:
+        - PolicyName: LambdaAccessDemo
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action: 'lambda:*'
+                Resource: !GetAtt LambdaDemo2.Arn
+  ## Lambda
+  LambdaDemo:
+    Type: AWS::Lambda::Function
+    Properties:     
+      Description: AWS Demo Lambda function
+      FunctionName: LambdaDemo
+      Role: !GetAtt LambdaIamRole.Arn
+      Runtime: python3.7
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          def handler(event,context):
+            message = "Hello Erick Test Lambda!"
+            return message
+      Environment:
+        Variables:
+          AWS_REGION_CUSTOM: !Ref AWS::Region        
+      Layers: [!If [UseDefaultPythonLayer, !FindInMap [ lambda, layer,python] , !Ref LambdaLayer]]
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref SecurityGroupVPCLambda
+        SubnetIds:
+          - !Ref SubNetPriv1
+          - !Ref SubNetPriv2
+  LambdaHealthCheck:
+    Condition: CreateLambdaHC
+    Type: AWS::Lambda::Function
+    Properties:     
+      Description: AWS HealthCheck Lambda function
+      FunctionName: LambdaHealthCheck
+      Role: !GetAtt LambdaHealthCheckIamRole.Arn
+      Runtime: python3.7
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          def handler(event,context):
+            message = "Hello Erick Test Lambda!"
+            return message
+      Environment:
+        Variables:
+          AWS_REGION_CUSTOM: !Ref AWS::Region        
+#      TracingConfig:
+#        Mode: Active      
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref SecurityGroupVPCLambda
+        SubnetIds:
+          - !Ref SubNetPriv1
+          - !Ref SubNetPriv2          
+  LambdaDemo2:
+    Type: AWS::Lambda::Function
+    Properties:     
+      Description: AWS Demo2 Lambda function
+      FunctionName: LambdaDemo2
+      Role: !GetAtt LambdaDemo2IamRole.Arn
+      #Role: !GetAtt LambdaIamRole.Arn
+      Runtime: python3.7
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          def handler(event,context):
+            message = "Hello Erick Test Lambda!"
+            return message
+      Environment:
+        Variables:
+          AWS_REGION_CUSTOM: !Ref AWS::Region        
+      Layers: [!If [UseDefaultPythonLayer, !FindInMap [ lambda, layer,python] , !Ref LambdaLayer]]
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref SecurityGroupVPCLambda
+        SubnetIds:
+          - !Ref SubNetPriv1
+          - !Ref SubNetPriv2
+  ## LambdaIamRole
+  LambdaDemo2IamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - 'lambda.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      Path: '/' 
+  LambdaIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - 'lambda.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: CustomLambdaDemoVPCPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'ec2:DescribeNetworkInterfaces'
+                  - 'ec2:CreateNetworkInterface'
+                  - 'ec2:DeleteNetworkInterface'
+                  - 'ec2:DescribeInstances'
+                  - 'ec2:AttachNetworkInterface'
+                Resource: '*'
+      Path: '/'
+  LambdaHealthCheckIamRole:
+    Condition: CreateLambdaHC
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - 'lambda.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: CustomLambdaHealthCheckVPCPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'ec2:DescribeNetworkInterfaces'
+                  - 'ec2:CreateNetworkInterface'
+                  - 'ec2:DeleteNetworkInterface'
+                  - 'ec2:DescribeInstances'
+                  - 'ec2:AttachNetworkInterface'
+                Resource: '*'
+      Path: '/'
+ 
+  ## Permission on ApiGateway to invoke Lambda
+  SampleApiPermissionDemo:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref LambdaDemo
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/Demo"
+  
+  SampleApiPermissionDemoSwagger:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref LambdaDemo
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/GET/Demo/Swagger"
+  
+#  SampleApiPermissionHealthCheck:
+#    Type: AWS::Lambda::Permission
+#    Properties:
+#      Action: "lambda:InvokeFunction"
+#      FunctionName: !If [CreateLambdaHC, !Ref LambdaHealthCheck , !Select [6, !Split [':', !Ref LambdaHC]] ]      
+#      Principal: "apigateway.amazonaws.com"
+#      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/GET/HealthCheck"
+#  SampleApiPermissionDemo2:
+#    Type: AWS::Lambda::Permission
+#    Properties:
+#      Action: "lambda:InvokeFunction"
+#      FunctionName: !Ref LambdaDemo2
+#      Principal: "apigateway.amazonaws.com"
+#      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/Demo2"
+#  
+#  SampleApiPermissionDemo2Swagger:
+#    Type: AWS::Lambda::Permission
+#    Properties:
+#      Action: "lambda:InvokeFunction"
+#      FunctionName: !Ref LambdaDemo2
+#      Principal: "apigateway.amazonaws.com"
+#      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/GET/Demo2/Swagger"
+  
+  ## WAF
+  WAFWebACL:
+    Type: 'AWS::WAFv2::WebACL'
+    Properties:
+      Name: MADOWebACLAPIGateway
+      Description: MADO WebACL for API Gateway
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: APIGatewayWebACLMetric
+      Rules:
+        - Name: AWS-SQLinjectionRuleSet
+          Priority: 0
+          Statement:
+            SqliMatchStatement:
+              FieldToMatch:
+                Method: {}
+              TextTransformations:
+                - Priority: 0
+                  Type: MD5
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWS-SQLinjectionRule
+        - Name: AWS-XSSRule
+          Priority: 1
+          Statement:
+            XssMatchStatement:
+              FieldToMatch:
+                Method: {}
+              TextTransformations:
+                - Priority: 0
+                  Type: MD5
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWS-XSSRule      
